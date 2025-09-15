@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 import statistics
 
 # Telegram bot credentials
-TOKEN = "8256982239:AAFZLRbcmRVgO1SiWOBqU7Hf00z6VU6nB64"
-GROUP_ID = -1002810133474
+TOKEN = "8444887959:AAFUB37iJVvbX68oZ4hkI8nMDiZO_cEWgC8"
+GROUP_ID = -2882813831
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 # Deriv API WebSocket endpoint
