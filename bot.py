@@ -44,14 +44,13 @@ def send_telegram_message(message: str, keep=False):
 
     with open(image_path, "rb") as img:
         resp = requests.post(
-            f"{BASE_URL}/sendPhoto",
+            f"{BASE_URL}/sendmessage",
             data={
                 "chat_id": GROUP_ID,
                 "caption": message,
                 "parse_mode": "HTML",
                 "reply_markup": json.dumps(keyboard),
-            },
-            files={"photo": img}
+            }
         )
 
     if resp.ok:
