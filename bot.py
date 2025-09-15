@@ -34,25 +34,16 @@ active_messages = []
 last_expired_id = None
 
 
-def send_telegram_message(message: str, image_path="logo.png", keep=False):
-    """Send a message with logo and Run button."""
-    keyboard = {
-        "inline_keyboard": [[
-            {"text": "🚀 Run on KashyTrader", "url": "https://www.kashytrader.site/"}
-        ]]
-    }
-
-    with open(image_path, "rb") as img:
-        resp = requests.post(
-            f"{BASE_URL}/sendPhoto",
-            data={
-                "chat_id": GROUP_ID,
-                "caption": message,
-                "parse_mode": "HTML",
-                "reply_markup": json.dumps(keyboard),
-            },
-            files={"photo": img}
-        )
+def send_telegram_message(message: str, keep=False):
+    """Send a plain text message (no logo, no buttons)."""
+    resp = requests.post(
+        f"{BASE_URL}/sendMessage",
+        data={
+            "chat_id": GROUP_ID,
+            "text": message,
+            "parse_mode": "HTML",
+        }
+    )
 
     if resp.ok:
         msg_id = resp.json()["result"]["message_id"]
@@ -63,7 +54,7 @@ def send_telegram_message(message: str, image_path="logo.png", keep=False):
 
 
 def delete_messages():
-    """Delete pre+main messages from last cycle."""
+    """Delete messages from last cycle."""
     global active_messages
     for msg_id in active_messages:
         requests.post(f"{BASE_URL}/deleteMessage", data={
@@ -188,7 +179,7 @@ def fetch_and_analyze():
         )
 
         main_msg = (
-            f"⚡ <b>KashyTrader Premium Signal</b>\n\n"
+            f"⚡ <b>Calekyz Premium Signal</b>\n\n"
             f"⏰ Time: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
             f"📊 Market: {market_name}\n"
             f"🎯 Signal: <b>{best_signal}</b>\n"
