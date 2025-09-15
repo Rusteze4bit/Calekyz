@@ -158,7 +158,7 @@ def fetch_and_analyze():
         # New display message (your requested format)
         main_msg = (
             f"We are trading *Over/Under market 🎯*\n"
-            f"(Over 9️⃣ recovery under 5️⃣ )\n\n"
+            f"(Under 8️⃣ recovery under 5️⃣ )\n\n"
             f"*{market_name}*\n\n"
             f"✅ *Contract Type:* {best_signal}\n"
             f"Set *use_entry = true* and *digit = {entry_digit}*\n"
