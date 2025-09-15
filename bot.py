@@ -66,9 +66,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- Configuration from environment ---
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # optional: where bot reports
-TRADING_API_URL = os.getenv("TRADING_API_URL", "https://example-trading-api.local/place_trade")
+TELEGRAM_TOKEN = os.getenv(8444887959:AAFUB37iJVvbX68oZ4hkI8nMDiZO_cEWgC8)
 TRADING_API_KEY = os.getenv("TRADING_API_KEY")
 MODE = os.getenv("MODE", "demo")  # demo or live
 
