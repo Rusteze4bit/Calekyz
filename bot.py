@@ -38,7 +38,7 @@ def send_telegram_message(message: str, keep=False):
     """Send a message with logo and Run button."""
     keyboard = {
         "inline_keyboard": [[
-            {"text": "🚀 Run on KashyTrader", "url": "https://www.kashytrader.site/"}
+            {"text": "🚀 Run on Calekyz", "url": "https://www.kashytrader.site/"}
         ]]
     }
 
