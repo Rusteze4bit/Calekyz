@@ -35,40 +35,50 @@ last_expired_id = None
 
 
 def send_telegram_message(message: str, keep=False):
-    """Send a message with logo and Run button."""
+    """Send plain text message to Telegram with debug logs."""
     keyboard = {
         "inline_keyboard": [[
             {"text": "🚀 Run on Calekyz", "url": "https://www.kashytrader.site/"}
         ]]
     }
 
-    with open(image_path, "rb") as img:
+    try:
         resp = requests.post(
-            f"{BASE_URL}/sendmessage",
+            f"{BASE_URL}/sendMessage",
             data={
                 "chat_id": GROUP_ID,
-                "caption": message,
+                "text": message,
                 "parse_mode": "HTML",
                 "reply_markup": json.dumps(keyboard),
             }
         )
 
-    if resp.ok:
-        msg_id = resp.json()["result"]["message_id"]
-        if not keep:
-            active_messages.append(msg_id)
-        return msg_id
+        if resp.ok:
+            msg_id = resp.json()["result"]["message_id"]
+            print(f"[Telegram ✅] Sent message ID {msg_id}: {message[:60]}...")
+            if not keep:
+                active_messages.append(msg_id)
+            return msg_id
+        else:
+            print("[Telegram ❌] Failed:", resp.text)
+    except Exception as e:
+        print("[Telegram ❌] Exception:", e)
+
     return None
 
 
 def delete_messages():
-    """Delete pre+main messages from last cycle."""
+    """Delete old active messages."""
     global active_messages
     for msg_id in active_messages:
-        requests.post(f"{BASE_URL}/deleteMessage", data={
-            "chat_id": GROUP_ID,
-            "message_id": msg_id
-        })
+        try:
+            requests.post(f"{BASE_URL}/deleteMessage", data={
+                "chat_id": GROUP_ID,
+                "message_id": msg_id
+            })
+            print(f"[Telegram 🗑️] Deleted message {msg_id}")
+        except Exception as e:
+            print("[Telegram ❌] Delete error:", e)
     active_messages = []
 
 
@@ -76,19 +86,19 @@ def delete_last_expired():
     """Delete last expired message before sending a new cycle."""
     global last_expired_id
     if last_expired_id:
-        requests.post(f"{BASE_URL}/deleteMessage", data={
-            "chat_id": GROUP_ID,
-            "message_id": last_expired_id
-        })
+        try:
+            requests.post(f"{BASE_URL}/deleteMessage", data={
+                "chat_id": GROUP_ID,
+                "message_id": last_expired_id
+            })
+            print(f"[Telegram 🗑️] Deleted expired {last_expired_id}")
+        except Exception as e:
+            print("[Telegram ❌] Delete expired error:", e)
         last_expired_id = None
 
 
 def analyze_market(market: str, ticks: list):
-    """
-    Advanced analysis:
-      - Under 6 distribution (with streak + volatility filter)
-      - Under 8 complex analysis (weighted ratio + streak + inverse volatility)
-    """
+    """Analyze market digits and return best signal with confidence."""
     if len(ticks) < 30:
         return None
 
@@ -122,10 +132,9 @@ def analyze_market(market: str, ticks: list):
 
 
 def fetch_and_analyze():
-    """Pick the best market and send full signal cycle."""
+    """Pick the best market and send signal."""
     global last_expired_id
 
-    # delete old expired before new cycle
     delete_last_expired()
 
     best_market, best_signal, best_confidence = None, None, 0
@@ -135,6 +144,7 @@ def fetch_and_analyze():
             result = analyze_market(market, market_ticks[market])
             if result:
                 signal, confidence = result
+                print(f"[Analysis] {market} → {signal} ({confidence:.2%})")
                 if confidence > best_confidence:
                     best_confidence = confidence
                     best_signal = signal
@@ -142,20 +152,8 @@ def fetch_and_analyze():
 
     if best_market:
         now = datetime.now()
-        entry_time = now + timedelta(minutes=1)
-        expiry_time = now + timedelta(minutes=4)
-        next_signal_time = now + timedelta(minutes=1)
-
+        entry_digit = int(str(market_ticks[best_market][-1])[-1])
         market_name = MARKET_NAMES.get(best_market, best_market)
-
-        # -------- MAIN SIGNAL --------
-        entry_digit = int(str(market_ticks[best_market][-1])[-1]) if market_ticks[best_market] else None
-
-        strategy_note = (
-            "\n\n🤖 Strategy Focus: <b>Digit Under 6</b>"
-            if best_signal == "Under 6"
-            else "\n\n🤖 Strategy Focus: <b>Digit Under 8</b>"
-        )
 
         main_msg = (
             f"⚡ <b>KashyTrader Premium Signal</b>\n\n"
@@ -165,23 +163,11 @@ def fetch_and_analyze():
             f"🔢 Entry Point Digit: <b>{entry_digit}</b>\n"
             f"📈 Confidence: <b>{best_confidence:.2%}</b>\n"
             f"🔥 Execute now!"
-            f"{strategy_note}"
         )
+
         send_telegram_message(main_msg)
-        time.sleep(20)  # 2 mins duration
-
-        # -------- POST-NOTIFICATION --------
-        post_msg = (
-            f"✅ <b>Signal Expired</b>\n\n"
-            f"📊 Market: {market_name}\n"
-            f"🕒 Expired at: {now.strftime('%H:%M:%S')}\n\n"
-            f"🔔 Next Signal Expected: {next_signal_time.strftime('%H:%M:%S')}"
-        )
-        last_expired_id = send_telegram_message(post_msg, keep=True)
-
-        # -------- CLEANUP OLD MESSAGES --------
-        time.sleep(15)
-        delete_messages()
+    else:
+        print("[Analysis] No valid signal yet (not enough ticks).")
 
 
 def on_message(ws, message):
@@ -196,25 +182,39 @@ def on_message(ws, message):
         if len(market_ticks[symbol]) > 200:
             market_ticks[symbol].pop(0)
 
+        print(f"[Tick] {symbol} → {quote}")
+
+
+def on_error(ws, error):
+    print("[WebSocket ❌] Error:", error)
+
+
+def on_close(ws, close_status_code, close_msg):
+    print("[WebSocket 🔌] Closed:", close_status_code, close_msg)
+
 
 def subscribe_to_ticks(ws):
     for market in MARKETS:
         ws.send(json.dumps({"ticks": market}))
+    print("[WebSocket 📡] Subscribed to ticks.")
 
 
 def run_websocket():
     ws = websocket.WebSocketApp(
         DERIV_API_URL,
-        on_message=on_message
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close
     )
     ws.on_open = lambda w: subscribe_to_ticks(w)
+    print("[WebSocket 🚀] Connecting...")
     ws.run_forever()
 
 
 def schedule_signals():
     while True:
         fetch_and_analyze()
-        time.sleep(60)  # every 10 min
+        time.sleep(60)  # check every 1 min
 
 
 if __name__ == "__main__":
