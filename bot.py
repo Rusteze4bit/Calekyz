@@ -8,7 +8,7 @@ import statistics
 
 # Telegram bot credentials
 TOKEN = "8444887959:AAFUB37iJVvbX68oZ4hkI8nMDiZO_cEWgC8"
-GROUP_ID = -2882813831
+GROUP_ID = -3046107796
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 # Deriv API WebSocket endpoint
