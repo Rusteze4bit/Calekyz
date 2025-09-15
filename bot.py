@@ -1,115 +1,253 @@
-import os
 import time
-import logging
-import random
+import requests
+import json
+import websocket
+import threading
 from datetime import datetime, timedelta
-from typing import Optional
+import statistics
 
-from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+# Telegram bot credentials
+TOKEN = "8256982239:AAFZLRbcmRVgO1SiWOBqU7Hf00z6VU6nB64"
+GROUP_ID = -1002810133474
+BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 
-# Load .env (for local) – Railway will use env vars
-load_dotenv()
+# Deriv API WebSocket endpoint
+DERIV_API_URL = "wss://ws.binaryws.com/websockets/v3?app_id=1089"
 
-# Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Markets to analyze
+MARKETS = ["R_10", "R_25", "R_50", "R_75", "R_100"]
 
-# --- Configuration ---
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-MODE = os.getenv("MODE", "demo")
-
-STRATEGY = {
-    "market": "Volatility 75 (1s)",
-    "contract_type": "OVER",
-    "digit": 4,
-    "strategy_name": "SNIPPER HAVOC V2",
-    "run_min": 10,
-    "run_max": 15,
-    "signal_valid_seconds": 120,
+# Market symbol to name mapping
+MARKET_NAMES = {
+    "R_10": "Volatility 10 Index",
+    "R_25": "Volatility 25 Index",
+    "R_50": "Volatility 50 Index",
+    "R_75": "Volatility 75 Index",
+    "R_100": "Volatility 100 Index",
 }
 
-active_runs = {}
+# Store last 200 ticks for analysis
+market_ticks = {market: [] for market in MARKETS}
 
-# --- Signal generator (placeholder for SNIPPER HAVOC V2) ---
-def mock_signal_generator() -> Optional[dict]:
-    if random.random() < 0.3:  # ~30% chance
-        return {
-            "time": datetime.utcnow().isoformat() + "Z",
-            "prediction": "OVER",
-            "digit": STRATEGY["digit"],
-            "valid_until": (datetime.utcnow() + timedelta(seconds=STRATEGY["signal_valid_seconds"])).isoformat() + "Z",
-            "note": "Mock signal - replace with SNIPPER HAVOC V2 logic",
-        }
+# Track message IDs
+active_messages = []
+last_expired_id = None
+
+
+def send_telegram_message(message: str, image_path="logo.png", keep=False):
+    """Send a message with logo and Run button."""
+    keyboard = {
+        "inline_keyboard": [[
+            {"text": "🚀 Run on KashyTrader", "url": "https://www.kashytrader.site/"}
+        ]]
+    }
+
+    with open(image_path, "rb") as img:
+        resp = requests.post(
+            f"{BASE_URL}/sendPhoto",
+            data={
+                "chat_id": GROUP_ID,
+                "caption": message,
+                "parse_mode": "HTML",
+                "reply_markup": json.dumps(keyboard),
+            },
+            files={"photo": img}
+        )
+
+    if resp.ok:
+        msg_id = resp.json()["result"]["message_id"]
+        if not keep:
+            active_messages.append(msg_id)
+        return msg_id
     return None
 
-# --- Run cycle logic ---
-def run_signal_cycle(identifier: str, runs: int):
-    from telegram import Bot
-    bot = Bot(token=TELEGRAM_TOKEN)
 
-    executed = 0
-    while executed < runs:
-        signal = mock_signal_generator()
-        if signal:
-            msg = (
-                f"📢 SIGNAL #{executed+1}\n"
-                f"Market: {STRATEGY['market']}\n"
-                f"Prediction: {signal['prediction']} {signal['digit']}\n"
-                f"Valid until: {signal['valid_until']}\n"
-                f"Strategy: {STRATEGY['strategy_name']}"
-            )
-            try:
-                bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-                logger.info("Sent signal: %s", msg)
-            except Exception as e:
-                logger.error("Failed to send signal: %s", e)
+def delete_messages():
+    """Delete pre+main messages from last cycle."""
+    global active_messages
+    for msg_id in active_messages:
+        requests.post(f"{BASE_URL}/deleteMessage", data={
+            "chat_id": GROUP_ID,
+            "message_id": msg_id
+        })
+    active_messages = []
 
-            executed += 1
 
-        time.sleep(1)  # avoid spamming too fast
+def delete_last_expired():
+    """Delete last expired message before sending a new cycle."""
+    global last_expired_id
+    if last_expired_id:
+        requests.post(f"{BASE_URL}/deleteMessage", data={
+            "chat_id": GROUP_ID,
+            "message_id": last_expired_id
+        })
+        last_expired_id = None
 
-    active_runs.pop(identifier, None)
-    logger.info("Finished signal cycle %s with %d signals", identifier, executed)
 
-# --- Telegram commands ---
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📡 Signal Bot ready! Use /run to generate signals.")
+def analyze_market(market: str, ticks: list):
+    """
+    Advanced adaptive analysis:
+      - Dynamic window size (depends on volatility)
+      - Ratio & streak analysis
+      - Transition probability modeling
+      - Adaptive confidence thresholds
+      - Supports Under 6 and Under 8
+    """
+    if len(ticks) < 50:
+        return None
 
-async def run_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    try:
-        runs = int(args[0]) if args else STRATEGY["run_min"]
-        runs = max(STRATEGY["run_min"], min(STRATEGY["run_max"], runs))
-    except Exception:
-        runs = STRATEGY["run_min"]
+    last_digits = [int(str(t)[-1]) for t in ticks]
 
-    identifier = f"sig-{update.effective_user.id}-{int(time.time())}"
-    from threading import Thread
-    t = Thread(target=run_signal_cycle, args=(identifier, runs), daemon=True)
-    active_runs[identifier] = {"thread": t, "started_by": update.effective_user.username}
-    t.start()
+    # --- Dynamic window size ---
+    base_window = 50
+    vol = statistics.pstdev(last_digits[-50:]) or 1
+    window = int(base_window * (1 + vol / 10))
+    window = min(window, len(last_digits))  # cap window
+    digits = last_digits[-window:]
 
-    await update.message.reply_text(f"✅ Started signal cycle {identifier} for {runs} runs.")
+    # --- Basic ratios ---
+    under6_ratio = sum(d < 6 for d in digits) / len(digits)
+    under8_ratio = sum(d < 8 for d in digits) / len(digits)
 
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"📊 Active signal cycles: {len(active_runs)}")
+    # --- Streak detection (last 10 digits) ---
+    last10 = digits[-10:]
+    streak_under6 = sum(d < 6 for d in last10) / 10
+    streak_under8 = sum(d < 8 for d in last10) / 10
 
-# --- Main ---
-def main():
-    if not TELEGRAM_TOKEN:
-        logger.error("TELEGRAM_TOKEN not set. Exiting.")
-        return
+    # --- Transition probabilities ---
+    trans_under6, trans_under8 = 0, 0
+    for i in range(len(digits) - 1):
+        if digits[i] < 6 and digits[i+1] < 6:
+            trans_under6 += 1
+        if digits[i] < 8 and digits[i+1] < 8:
+            trans_under8 += 1
+    trans_under6 /= max(1, len(digits) - 1)
+    trans_under8 /= max(1, len(digits) - 1)
 
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("run", run_command))
-    app.add_handler(CommandHandler("status", status_command))
+    # --- Weighted scoring system ---
+    score_under6 = (
+        under6_ratio * 0.4 +
+        streak_under6 * 0.3 +
+        trans_under6 * 0.2 +
+        (1 / vol) * 0.1
+    )
 
-    logger.info("Starting Signal Bot polling...")
-    app.run_polling()
+    score_under8 = (
+        under8_ratio * 0.4 +
+        streak_under8 * 0.3 +
+        trans_under8 * 0.2 +
+        (1 / vol) * 0.1
+    )
+
+    strength = {
+        "Under 6": score_under6,
+        "Under 8": score_under8
+    }
+
+    best_signal = max(strength, key=strength.get)
+    confidence = strength[best_signal]
+
+    # --- Adaptive confidence threshold ---
+    if confidence < 0.55:
+        return None  # skip weak signals
+
+    return best_signal, confidence
+
+
+def fetch_and_analyze():
+    """Pick the best market and send full signal cycle."""
+    global last_expired_id
+
+    # delete old expired before new cycle
+    delete_last_expired()
+
+    best_market, best_signal, best_confidence = None, None, 0
+
+    for market in MARKETS:
+        if len(market_ticks[market]) > 50:
+            result = analyze_market(market, market_ticks[market])
+            if result:
+                signal, confidence = result
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_signal = signal
+                    best_market = market
+
+    if best_market and best_signal:
+        now = datetime.now()
+        next_signal_time = now + timedelta(minutes=1)
+        market_name = MARKET_NAMES.get(best_market, best_market)
+
+        # -------- MAIN SIGNAL --------
+        entry_digit = int(str(market_ticks[best_market][-1])[-1]) if market_ticks[best_market] else None
+
+        strategy_note = (
+            "\n\n🤖 Strategy Focus: <b>Digit Under 6</b>"
+            if best_signal == "Under 6"
+            else "\n\n🤖 Strategy Focus: <b>Digit Under 8</b>"
+        )
+
+        main_msg = (
+            f"⚡ <b>KashyTrader Premium Signal</b>\n\n"
+            f"⏰ Time: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"📊 Market: {market_name}\n"
+            f"🎯 Signal: <b>{best_signal}</b>\n"
+            f"🔢 Entry Point Digit: <b>{entry_digit}</b>\n"
+            f"📈 Confidence: <b>{best_confidence:.2%}</b>\n"
+            f"🔥 Execute now!"
+            f"{strategy_note}"
+        )
+        send_telegram_message(main_msg)
+        time.sleep(120)  # 2 mins duration
+
+        # -------- POST-NOTIFICATION --------
+        post_msg = (
+            f"✅ <b>Signal Expired</b>\n\n"
+            f"📊 Market: {market_name}\n"
+            f"🕒 Expired at: {now.strftime('%H:%M:%S')}\n\n"
+            f"🔔 Next Signal Expected: {next_signal_time.strftime('%H:%M:%S')}"
+        )
+        last_expired_id = send_telegram_message(post_msg, keep=True)
+
+        # -------- CLEANUP OLD MESSAGES --------
+        time.sleep(30)
+        delete_messages()
+
+
+def on_message(ws, message):
+    """Handle incoming tick data."""
+    data = json.loads(message)
+
+    if "tick" in data:
+        symbol = data["tick"]["symbol"]
+        quote = data["tick"]["quote"]
+
+        market_ticks[symbol].append(quote)
+        if len(market_ticks[symbol]) > 200:
+            market_ticks[symbol].pop(0)
+
+
+def subscribe_to_ticks(ws):
+    for market in MARKETS:
+        ws.send(json.dumps({"ticks": market}))
+
+
+def run_websocket():
+    ws = websocket.WebSocketApp(
+        DERIV_API_URL,
+        on_message=on_message
+    )
+    ws.on_open = lambda w: subscribe_to_ticks(w)
+    ws.run_forever()
+
+
+def schedule_signals():
+    while True:
+        fetch_and_analyze()
+        time.sleep(600)  # every 10 min
+
 
 if __name__ == "__main__":
-    main()
+    ws_thread = threading.Thread(target=run_websocket)
+    ws_thread.start()
+    schedule_signals()
