@@ -38,7 +38,7 @@ def send_telegram_message(message: str, keep=False):
     """Send plain text message to Telegram with debug logs."""
     keyboard = {
         "inline_keyboard": [[
-            {"text": "🚀 Run on Calekyz", "url": "https://www.kashytrader.site/"}
+            {"text": "🚀 Run on Calekyz", "url": "https://www.calekyztrading.site/"}
         ]]
     }
 
