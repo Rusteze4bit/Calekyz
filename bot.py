@@ -173,6 +173,15 @@ def fetch_and_analyze():
         )
 
         send_telegram_message(main_msg)
+
+        # --- Next Signal Preparation Message ---
+        next_time = (now + timedelta(minutes=1)).strftime("%H:%M:%S")
+        prep_msg = (
+            f"🚀 Prepare for the next signal at {next_time} EAT "
+            f"({(now + timedelta(minutes=1)).strftime('%H:%M:%S')} GMT)"
+        )
+        send_telegram_message(prep_msg, keep=True)
+
     else:
         print("[Analysis] No valid signal yet (not enough ticks).")
 
