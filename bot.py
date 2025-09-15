@@ -155,14 +155,21 @@ def fetch_and_analyze():
         entry_digit = int(str(market_ticks[best_market][-1])[-1])
         market_name = MARKET_NAMES.get(best_market, best_market)
 
+        # New display message (your requested format)
         main_msg = (
-            f"⚡ <b>Calekyz Premium Signal</b>\n\n"
-            f"⏰ Time: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"📊 Market: {market_name}\n"
-            f"🎯 Signal: <b>{best_signal}</b>\n"
-            f"🔢 Entry Point Digit: <b>{entry_digit}</b>\n"
-            f"📈 Confidence: <b>{best_confidence:.2%}</b>\n"
-            f"🔥 Execute now!"
+            f"We are trading *Over/Under market 🎯*\n"
+            f"(Over 0️⃣ recovery under 4️⃣)\n\n"
+            f"*{market_name}*\n\n"
+            f"✅ *Contract Type:* {best_signal}\n"
+            f"Set *use_entry = true* and *digit = {entry_digit}*\n"
+            f"⚡️Use the *SNIPPER HAVOC V2*\n"
+            f"🔄 Run for 10-15 times\n\n"
+            f"🥊 SIGNAL VALID FOR 2 MINS! 🥊\n\n"
+            f"🚦 *What to do when you get the signal* 🚦\n"
+            f".*Load the bot on* calekyztrading.site\n"
+            f"_🧩 Change stake and prediction as stated._\n"
+            f"🚫 *NOTE:* You can change prediction to Over 1 or 2 if comfortable 😎\n\n"
+            f"⏰ Time: {now.strftime('%H:%M:%S')} (EAT)"
         )
 
         send_telegram_message(main_msg)
