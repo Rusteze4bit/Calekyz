@@ -34,7 +34,7 @@ active_messages = []
 last_expired_id = None
 
 
-def send_telegram_message(message: str, image_path="logo.png", keep=False):
+def send_telegram_message(message: str, keep=False):
     """Send a message with logo and Run button."""
     keyboard = {
         "inline_keyboard": [[
