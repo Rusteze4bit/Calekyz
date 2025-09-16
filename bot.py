@@ -178,7 +178,7 @@ def fetch_and_analyze():
         next_time = (now + timedelta(minutes=1)).strftime("%H:%M:%S")
         prep_msg = (
             f"🚀 Prepare for the next signal at {next_time} EAT "
-            f"({(now + timedelta(minutes=1)).strftime('%H:%M:%S')} GMT)"
+            f"({(now + timedelta(minutes=3)).strftime('%H:%M:%S')} GMT)"
         )
         send_telegram_message(prep_msg, keep=True)
 
@@ -230,7 +230,7 @@ def run_websocket():
 def schedule_signals():
     while True:
         fetch_and_analyze()
-        time.sleep(60)  # check every 1 min
+        time.sleep(180)  # check every 1 min
 
 
 if __name__ == "__main__":
