@@ -31,7 +31,7 @@ MARKET_NAMES = {
 market_ticks = {market: [] for market in MARKETS}
 
 # Track message IDs
-active_messages = []
+active_messages = []   # for signals
 last_expired_id = None
 last_prep_id = None
 
@@ -40,23 +40,19 @@ EAT = pytz.timezone("Africa/Nairobi")
 
 
 def now_eat():
-    """Return current datetime in EAT timezone."""
     return datetime.now(EAT)
 
 
 def format_eat(dt):
-    """Format datetime object to HH:MM:SS in EAT timezone."""
     return dt.astimezone(EAT).strftime("%H:%M:%S")
 
 
 def send_telegram_message(message: str, keep=False):
-    """Send plain text message to Telegram with debug logs."""
     keyboard = {
         "inline_keyboard": [[
             {"text": "🚀 Run on Calekyz", "url": "https://www.calekyztrading.site/"}
         ]]
     }
-
     try:
         resp = requests.post(
             f"{BASE_URL}/sendMessage",
@@ -67,7 +63,6 @@ def send_telegram_message(message: str, keep=False):
                 "reply_markup": json.dumps(keyboard),
             }
         )
-
         if resp.ok:
             msg_id = resp.json()["result"]["message_id"]
             print(f"[Telegram ✅] Sent message ID {msg_id}: {message[:60]}...")
@@ -78,12 +73,11 @@ def send_telegram_message(message: str, keep=False):
             print("[Telegram ❌] Failed:", resp.text)
     except Exception as e:
         print("[Telegram ❌] Exception:", e)
-
     return None
 
 
 def delete_messages():
-    """Delete old active messages (temporary signals)."""
+    """Delete old active messages (main signals)."""
     global active_messages
     for msg_id in active_messages:
         try:
@@ -98,7 +92,7 @@ def delete_messages():
 
 
 def delete_prep():
-    """Delete the last prep message before posting a new one."""
+    """Delete last prep message."""
     global last_prep_id
     if last_prep_id:
         try:
@@ -113,7 +107,7 @@ def delete_prep():
 
 
 def delete_expired():
-    """Delete the last expiration message before posting a new one."""
+    """Delete last expiration message."""
     global last_expired_id
     if last_expired_id:
         try:
@@ -128,24 +122,19 @@ def delete_expired():
 
 
 def analyze_market(market: str, ticks: list):
-    """Analyze market digits and return best signal with confidence."""
     if len(ticks) < 30:
         return None
 
     last_digits = [int(str(t)[-1]) for t in ticks]
-
     under6_count = sum(d < 6 for d in last_digits)
     under8_count = sum(d < 8 for d in last_digits)
 
-    # streak detection
     last5 = last_digits[-5:]
     streak_under6 = sum(d < 6 for d in last5) / 5
     streak_under8 = sum(d < 8 for d in last5) / 5
 
-    # volatility filter (stddev of last 20 digits)
-    vol = statistics.pstdev(last_digits[-20:]) or 1  # avoid div/0
+    vol = statistics.pstdev(last_digits[-20:]) or 1
 
-    # weights for signals
     strength = {
         "Under 6": (under6_count / len(last_digits) + streak_under6 * 0.4) / (1 + vol / 10),
         "Under 8": (
@@ -157,12 +146,10 @@ def analyze_market(market: str, ticks: list):
 
     best_signal = max(strength, key=strength.get)
     confidence = strength[best_signal]
-
     return best_signal, confidence
 
 
 def fetch_and_analyze():
-    """Pick the best market and send signal."""
     global last_expired_id, last_prep_id
 
     delete_messages()
@@ -176,7 +163,6 @@ def fetch_and_analyze():
             result = analyze_market(market, market_ticks[market])
             if result:
                 signal, confidence = result
-                print(f"[Analysis] {market} → {signal} ({confidence:.2%})")
                 if confidence > best_confidence:
                     best_confidence = confidence
                     best_signal = signal
@@ -227,22 +213,23 @@ def fetch_and_analyze():
         )
         last_prep_id = send_telegram_message(prep_msg, keep=True)
 
+        # --- Delete signal + expiration after 30s ---
+        time.sleep(30)
+        delete_messages()
+        delete_expired()
+
     else:
         print("[Analysis] No valid signal yet (not enough ticks).")
 
 
 def on_message(ws, message):
-    """Handle incoming tick data."""
     data = json.loads(message)
-
     if "tick" in data:
         symbol = data["tick"]["symbol"]
         quote = data["tick"]["quote"]
-
         market_ticks[symbol].append(quote)
         if len(market_ticks[symbol]) > 200:
             market_ticks[symbol].pop(0)
-
         print(f"[Tick] {symbol} → {quote}")
 
 
@@ -275,7 +262,7 @@ def run_websocket():
 def schedule_signals():
     while True:
         fetch_and_analyze()
-        time.sleep(600 - 180)  # 10 min total, minus ~3 min used for signal+expiration+prep
+        time.sleep(600 - 210)  # 10 min interval - (2m signal + 1m prep + 30s delete)
 
 
 if __name__ == "__main__":
