@@ -131,6 +131,14 @@ def analyze_market(market: str, ticks: list):
     return best_signal, confidence
 
 
+from datetime import datetime, timedelta
+import pytz   # add this import at the top
+
+# Define timezones
+tz_eat = pytz.timezone("Africa/Nairobi")
+tz_gmt = pytz.utc
+
+
 def fetch_and_analyze():
     """Pick the best market and send signal."""
     global last_expired_id
@@ -151,11 +159,13 @@ def fetch_and_analyze():
                     best_market = market
 
     if best_market:
-        now = datetime.now()
+        now_utc = datetime.now(tz_gmt)
+        now_eat = datetime.now(tz_eat)
+
         entry_digit = int(str(market_ticks[best_market][-1])[-1])
         market_name = MARKET_NAMES.get(best_market, best_market)
 
-        # New display message (your requested format)
+        # Main signal message
         main_msg = (
             f"We are trading *Over/Under market 🎯*\n"
             f"(Under 8️⃣ recovery under 5️⃣ )\n\n"
@@ -169,22 +179,22 @@ def fetch_and_analyze():
             f".*Load the bot on* calekyztrading.site\n"
             f"_🧩 Change stake and prediction as stated._\n"
             f"🚫 *NOTE:* You can change prediction to Over 1 or 2 if comfortable 😎\n\n"
-            f"⏰ Time: {now.strftime('%H:%M:%S')} (EAT)"
+            f"⏰ Time: {now_eat.strftime('%H:%M:%S')} (EAT) | {now_utc.strftime('%H:%M:%S')} (GMT)"
         )
 
         send_telegram_message(main_msg)
 
         # --- Next Signal Preparation Message ---
-        next_time = (now + timedelta(minutes=1)).strftime("%H:%M:%S")
+        next_time_eat = (now_eat + timedelta(minutes=3)).strftime("%H:%M:%S")
+        next_time_gmt = (now_utc + timedelta(minutes=3)).strftime("%H:%M:%S")
+
         prep_msg = (
-            f"🚀 Prepare for the next signal at {next_time} EAT "
-            f"({(now + timedelta(minutes=3)).strftime('%H:%M:%S')} GMT)"
+            f"🚀 Prepare for the next signal at {next_time_eat} EAT | {next_time_gmt} GMT"
         )
         send_telegram_message(prep_msg, keep=True)
 
     else:
         print("[Analysis] No valid signal yet (not enough ticks).")
-
 
 def on_message(ws, message):
     """Handle incoming tick data."""
