@@ -4,7 +4,6 @@ import json
 import websocket
 import threading
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 import statistics
 
 # Telegram bot credentials
@@ -33,10 +32,7 @@ market_ticks = {market: [] for market in MARKETS}
 # Track message IDs
 active_messages = []
 last_expired_id = None
-
-# Timezones
-tz_eat = ZoneInfo("Africa/Nairobi")  # EAT (UTC+3)
-tz_gmt = ZoneInfo("UTC")             # GMT
+last_prep_id = None
 
 
 def send_telegram_message(message: str, keep=False):
@@ -53,7 +49,7 @@ def send_telegram_message(message: str, keep=False):
             data={
                 "chat_id": GROUP_ID,
                 "text": message,
-                "parse_mode": "HTML",
+                "parse_mode": "Markdown",
                 "reply_markup": json.dumps(keyboard),
             }
         )
@@ -73,7 +69,7 @@ def send_telegram_message(message: str, keep=False):
 
 
 def delete_messages():
-    """Delete old active messages."""
+    """Delete old active messages (temporary signals)."""
     global active_messages
     for msg_id in active_messages:
         try:
@@ -87,8 +83,23 @@ def delete_messages():
     active_messages = []
 
 
-def delete_last_expired():
-    """Delete last expired message before sending a new cycle."""
+def delete_prep():
+    """Delete the last prep message before posting a new one."""
+    global last_prep_id
+    if last_prep_id:
+        try:
+            requests.post(f"{BASE_URL}/deleteMessage", data={
+                "chat_id": GROUP_ID,
+                "message_id": last_prep_id
+            })
+            print(f"[Telegram 🗑️] Deleted prep message {last_prep_id}")
+        except Exception as e:
+            print("[Telegram ❌] Delete prep error:", e)
+        last_prep_id = None
+
+
+def delete_expired():
+    """Delete the last expiration message before posting a new one."""
     global last_expired_id
     if last_expired_id:
         try:
@@ -96,7 +107,7 @@ def delete_last_expired():
                 "chat_id": GROUP_ID,
                 "message_id": last_expired_id
             })
-            print(f"[Telegram 🗑️] Deleted expired {last_expired_id}")
+            print(f"[Telegram 🗑️] Deleted expired message {last_expired_id}")
         except Exception as e:
             print("[Telegram ❌] Delete expired error:", e)
         last_expired_id = None
@@ -138,8 +149,11 @@ def analyze_market(market: str, ticks: list):
 
 def fetch_and_analyze():
     """Pick the best market and send signal."""
-    global last_expired_id
-    delete_last_expired()
+    global last_expired_id, last_prep_id
+
+    delete_messages()
+    delete_expired()
+    delete_prep()
 
     best_market, best_signal, best_confidence = None, None, 0
 
@@ -155,13 +169,11 @@ def fetch_and_analyze():
                     best_market = market
 
     if best_market:
-        now_eat = datetime.now(tz_eat)
-        now_gmt = datetime.now(tz_gmt)
-
+        now = datetime.now()
         entry_digit = int(str(market_ticks[best_market][-1])[-1])
         market_name = MARKET_NAMES.get(best_market, best_market)
 
-        # Main signal message
+        # --- Main Signal ---
         main_msg = (
             f"We are trading *Over/Under market 🎯*\n"
             f"(Under 8️⃣ recovery under 5️⃣ )\n\n"
@@ -175,17 +187,31 @@ def fetch_and_analyze():
             f".*Load the bot on* calekyztrading.site\n"
             f"_🧩 Change stake and prediction as stated._\n"
             f"🚫 *NOTE:* You can change prediction to Over 1 or 2 if comfortable 😎\n\n"
-            f"⏰ Time: {now_eat.strftime('%H:%M:%S')} (EAT) | {now_gmt.strftime('%H:%M:%S')} (GMT)"
+            f"⏰ Time: {now.strftime('%H:%M:%S')} (EAT / GMT)"
         )
-
         send_telegram_message(main_msg)
 
-        # Next Signal Preparation Message (3 min interval)
-        next_time_eat = (now_eat + timedelta(minutes=3)).strftime("%H:%M:%S")
-        next_time_gmt = (now_gmt + timedelta(minutes=3)).strftime("%H:%M:%S")
+        # --- Expiration Message (after 2 mins) ---
+        time.sleep(120)
+        exp_time = datetime.now().strftime("%H:%M:%S")
+        next_signal_time = (now + timedelta(minutes=10)).strftime("%H:%M:%S")
+        exp_msg = (
+            f"🎯 Session at {exp_time} EAT completed!\n"
+            f"✅ Win Rate: {best_confidence:.2%}\n"
+            f"🚦 Next signal at {next_signal_time} EAT (GMT)\n"
+            f"🚦 Keep trading with SNIPPER LITE Bot on calekyztrading.site!"
+        )
+        last_expired_id = send_telegram_message(exp_msg, keep=True)
 
-        prep_msg = f"🚀 Prepare for the next signal at {next_time_eat} EAT | {next_time_gmt} GMT"
-        send_telegram_message(prep_msg, keep=True)
+        # --- Prep Message (1 min after expiration) ---
+        time.sleep(60)
+        prep_time = datetime.now().strftime("%H:%M:%S")
+        next_time = (now + timedelta(minutes=10)).strftime("%H:%M:%S")
+        prep_msg = (
+            f"🚀 Prepare for the next signal at {next_time} EAT (GMT)\n"
+            f"🕒 Current time: {prep_time}"
+        )
+        last_prep_id = send_telegram_message(prep_msg, keep=True)
 
     else:
         print("[Analysis] No valid signal yet (not enough ticks).")
@@ -235,7 +261,7 @@ def run_websocket():
 def schedule_signals():
     while True:
         fetch_and_analyze()
-        time.sleep(180)  # check every 3 min
+        time.sleep(600 - 180)  # 10 min total, minus 3 min already used in signal+expiration+prep
 
 
 if __name__ == "__main__":
