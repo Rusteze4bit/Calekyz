@@ -5,6 +5,7 @@ import websocket
 import threading
 from datetime import datetime, timedelta
 import statistics
+import pytz
 
 # Telegram bot credentials
 TOKEN = "8444887959:AAFUB37iJVvbX68oZ4hkI8nMDiZO_cEWgC8"
@@ -33,6 +34,19 @@ market_ticks = {market: [] for market in MARKETS}
 active_messages = []
 last_expired_id = None
 last_prep_id = None
+
+# Timezone setup (EAT)
+EAT = pytz.timezone("Africa/Nairobi")
+
+
+def now_eat():
+    """Return current datetime in EAT timezone."""
+    return datetime.now(EAT)
+
+
+def format_eat(dt):
+    """Format datetime object to HH:MM:SS in EAT timezone."""
+    return dt.astimezone(EAT).strftime("%H:%M:%S")
 
 
 def send_telegram_message(message: str, keep=False):
@@ -169,7 +183,7 @@ def fetch_and_analyze():
                     best_market = market
 
     if best_market:
-        now = datetime.now()
+        now = now_eat()
         entry_digit = int(str(market_ticks[best_market][-1])[-1])
         market_name = MARKET_NAMES.get(best_market, best_market)
 
@@ -187,29 +201,29 @@ def fetch_and_analyze():
             f".*Load the bot on* calekyztrading.site\n"
             f"_🧩 Change stake and prediction as stated._\n"
             f"🚫 *NOTE:* You can change prediction to Over 1 or 2 if comfortable 😎\n\n"
-            f"⏰ Time: {now.strftime('%H:%M:%S')} (EAT / GMT)"
+            f"⏰ Time: {format_eat(now)} EAT"
         )
         send_telegram_message(main_msg)
 
         # --- Expiration Message (after 2 mins) ---
         time.sleep(120)
-        exp_time = datetime.now().strftime("%H:%M:%S")
-        next_signal_time = (now + timedelta(minutes=10)).strftime("%H:%M:%S")
+        exp_time = format_eat(now_eat())
+        next_signal_time = format_eat(now + timedelta(minutes=10))
         exp_msg = (
             f"🎯 Session at {exp_time} EAT completed!\n"
             f"✅ Win Rate: {best_confidence:.2%}\n"
-            f"🚦 Next signal at {next_signal_time} EAT (GMT)\n"
+            f"🚦 Next signal at {next_signal_time} EAT\n"
             f"🚦 Keep trading with SNIPPER LITE Bot on calekyztrading.site!"
         )
         last_expired_id = send_telegram_message(exp_msg, keep=True)
 
         # --- Prep Message (1 min after expiration) ---
         time.sleep(60)
-        prep_time = datetime.now().strftime("%H:%M:%S")
-        next_time = (now + timedelta(minutes=10)).strftime("%H:%M:%S")
+        prep_time = format_eat(now_eat())
+        next_time = format_eat(now + timedelta(minutes=10))
         prep_msg = (
-            f"🚀 Prepare for the next signal at {next_time} EAT (GMT)\n"
-            f"🕒 Current time: {prep_time}"
+            f"🚀 Prepare for the next signal at {next_time} EAT\n"
+            f"🕒 Current time: {prep_time} EAT"
         )
         last_prep_id = send_telegram_message(prep_msg, keep=True)
 
@@ -261,7 +275,7 @@ def run_websocket():
 def schedule_signals():
     while True:
         fetch_and_analyze()
-        time.sleep(600 - 180)  # 10 min total, minus 3 min already used in signal+expiration+prep
+        time.sleep(600 - 180)  # 10 min total, minus ~3 min used for signal+expiration+prep
 
 
 if __name__ == "__main__":
